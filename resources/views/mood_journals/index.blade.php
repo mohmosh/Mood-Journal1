@@ -54,6 +54,11 @@
                 </button>
             </div>
 
+                <div class="mt-4">
+                <a href="{{ route('mood-journals.create') }}" class="btn btn-mood">➕ New Entry</a>
+            </div>
+        </div>
+
             <!-- Modal -->
             <div class="modal fade" id="donateModal" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog">
@@ -126,10 +131,10 @@
             </div>
 
             <!-- New Entry button at bottom -->
-            <div class="mt-4">
+            <!-- <div class="mt-4">
                 <a href="{{ route('mood-journals.create') }}" class="btn btn-mood">➕ New Entry</a>
             </div>
-        </div>
+        </div> -->
 
 
 

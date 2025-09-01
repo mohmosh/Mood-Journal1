@@ -49,10 +49,17 @@
 
         <div class="mb-3">
           <label class="form-label">Password</label>
-          <input type="password" name="password"
-            class="form-control @error('password') is-invalid @enderror" required>
-          @error('password') <div class="invalid-feedback">{{ $message }}</div> @enderror
+          <input
+            type="password"
+            name="password"
+            placeholder="At least 8 characters"
+            class="form-control @error('password') is-invalid @enderror"
+            required>
+          @error('password')
+          <div class="invalid-feedback">{{ $message }}</div>
+          @enderror
         </div>
+
 
         <div class="mb-3">
           <label class="form-label">Confirm Password</label>

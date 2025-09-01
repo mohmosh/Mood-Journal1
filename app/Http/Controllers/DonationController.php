@@ -26,6 +26,14 @@ class DonationController extends Controller
             'description' => "Donation from " . Auth::user()->name,
         ]);
 
+        \Log::info('IntaSend STK Push Request:', [
+            'amount' => $amount,
+            'phone' => $phone,
+        ]);
+
+        \Log::info('IntaSend STK Push Response:', $response->json());
+
+
         if ($response->successful()) {
             return redirect($response['checkout_url']);
         }
@@ -35,8 +43,11 @@ class DonationController extends Controller
 
     public function webhook(Request $request)
     {
-        // Log donation details
+
         \Log::info('Donation Webhook:', $request->all());
+        
+        return response()->json(['received' => true]);
+        // Log donation details
 
         // Optional: Save donation to database
         // Donation::create([
@@ -52,31 +63,30 @@ class DonationController extends Controller
     }
 
     public function stkPush(Request $request)
-{
-    $request->validate([
-        'amount' => 'required|numeric|min:1',
-        'phone' => 'required|string',
-    ]);
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:1',
+            'phone' => 'required|string',
+        ]);
 
-    $amount = intval($request->amount * 100); // Convert to cents/kobo
-    $phone  = $request->phone;
+        $amount = intval($request->amount);
+        $phone  = $request->phone;
 
-    // Call IntaSend STK Push API
-    $response = Http::withHeaders([
-        'Authorization' => 'Bearer ' . env('INTASEND_API_KEY')
-    ])->post('https://api.intasend.com/v1/mpesa/stk/push', [
-        'amount' => $amount,
-        'currency' => 'KES',
-        'phone' => $phone,
-        'callback_url' => route('webhook.donation'),
-        'description' => "Donation from " . Auth::user()->name,
-    ]);
+        // Call IntaSend STK Push API
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . env('INTASEND_API_KEY')
+        ])->post('https://api.intasend.com/v1/mpesa/stk/push', [
+            'amount' => $amount,
+            'currency' => 'KES',
+            'phone' => $phone,
+            'callback_url' => route('webhook.donation'),
+            'description' => "Donation from " . Auth::user()->name,
+        ]);
 
-    if ($response->successful()) {
-        return redirect()->back()->with('success', 'STK push sent! Check your phone to complete payment.');
+        if ($response->successful()) {
+            return redirect()->back()->with('success', 'STK push sent! Check your phone to complete payment.');
+        }
+
+        return redirect()->back()->with('error', 'Failed to initiate STK push.');
     }
-
-    return redirect()->back()->with('error', 'Failed to initiate STK push.');
-}
-
 }

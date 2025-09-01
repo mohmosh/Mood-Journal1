@@ -36,4 +36,9 @@ class MoodJournal extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function response()
+    {
+        return $this->hasOne(\App\Models\JournalResponse::class, 'mood_journal_id');
+    }
 }

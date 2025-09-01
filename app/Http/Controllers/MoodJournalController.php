@@ -66,7 +66,7 @@ class MoodJournalController extends Controller
 
     public function store(StoreMoodJournalRequest $request)
     {
-        // Store the journal entry first
+        // 1. Store the journal entry first in DB
         $journal = MoodJournal::create([
             'user_id'    => Auth::id(),
             'mood'       => $request->mood,
@@ -75,45 +75,53 @@ class MoodJournalController extends Controller
             'entry_date' => $request->entry_date,
         ]);
 
-        // Hugging Face API
+        // 2. Call Hugging Face API to analyze the emotion from the journal entry
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . env('HUGGINGFACE_API_KEY'),
         ])->post(
             'https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base',
             [
-                'inputs' => $request->entry,  // the journal text
+                'inputs' => $request->entry,  // send the journal text for analysis
             ]
         );
 
-      if ($response->successful()) {
-    \Log::info('✅ HuggingFace raw response', $response->json());
+        // 3. Handle Hugging Face response
+        if ($response->successful()) {
+            \Log::info('✅ HuggingFace raw response', $response->json());
 
-    $result = $response->json();
-    $topEmotion = collect($result[0] ?? [])->sortByDesc('score')->first();
+            $result = $response->json();
+            $topEmotion = collect($result[0] ?? [])->sortByDesc('score')->first();
 
-    if ($topEmotion) {
-        $journal->emotion_label = $topEmotion['label'];
-        $journal->emotion_score = intval($topEmotion['score'] * 100);
-        $journal->save();
+            if ($topEmotion) {
+                // Save the top emotion (label + score) back to journal
+                $journal->emotion_label = $topEmotion['label'];
+                $journal->emotion_score = intval($topEmotion['score'] * 100);
+                $journal->save();
 
-        \Log::info('✅ Stored Emotion:', [
-            'label' => $journal->emotion_label,
-            'score' => $journal->emotion_score,
-        ]);
-    } else {
-        \Log::warning('⚠️ No topEmotion found', ['result' => $result]);
-    }
-} else {
-    \Log::error('❌ HuggingFace API failed', [
-        'status' => $response->status(),
-        'body'   => $response->body(),
-    ]);
-}
+                \Log::info('✅ Stored Emotion:', [
+                    'label' => $journal->emotion_label,
+                    'score' => $journal->emotion_score,
+                ]);
 
+                // 4. Dispatch a background job to Claude API
+                // This will generate an encouragement message and Bible verse
+                \App\Jobs\GenerateJournalResponseJob::dispatch($journal);
+            } else {
+                \Log::warning('⚠️ No topEmotion found', ['result' => $result]);
+            }
+        } else {
+            // Log Hugging Face error if it fails
+            \Log::error('❌ HuggingFace API failed', [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+        }
 
+        // 5. Redirect back to journal list with success message
         return redirect()->route('mood-journals.index')
-            ->with('success', 'Mood journal entry added and emotion analyzed successfully!');
+            ->with('success', 'Mood journal entry added, emotion analyzed, and encouragement requested!');
     }
+
 
 
 
@@ -133,11 +141,13 @@ class MoodJournalController extends Controller
      */
     public function update(StoreMoodJournalRequest $request, MoodJournal $moodJournal)
     {
+        // 1. Ensure only owner can update the journal
         $this->authorizeAccess($moodJournal);
 
+        // 2. Update journal fields
         $moodJournal->update($request->validated());
 
-        // Re-analyze emotion on update (use same Hugging Face model & .env key as store)
+        // 3. Re-analyze the updated entry with Hugging Face API
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . env('HUGGINGFACE_API_KEY'),
         ])->post('https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base', [
@@ -148,20 +158,28 @@ class MoodJournalController extends Controller
             $emotionData = $response->json();
 
             if (isset($emotionData[0])) {
+                // Get top emotion
                 $topEmotion = collect($emotionData[0])->sortByDesc('score')->first();
 
+                // Save updated emotion to journal
                 $moodJournal->emotion_label = $topEmotion['label'] ?? 'neutral';
                 $moodJournal->emotion_score = isset($topEmotion['score'])
                     ? round($topEmotion['score'] * 100)
                     : 0;
 
                 $moodJournal->save();
+
+                // 4. Dispatch Claude job again
+                // So updated entries get fresh encouragement + verse
+                \App\Jobs\GenerateJournalResponseJob::dispatch($moodJournal);
             }
         }
 
+        // 5. Redirect back with success message
         return redirect()->route('mood-journals.index')
-            ->with('success', 'Mood journal updated and re-analyzed successfully!');
+            ->with('success', 'Mood journal updated, re-analyzed, and new encouragement requested!');
     }
+
 
 
 
@@ -178,13 +196,19 @@ class MoodJournalController extends Controller
             ->with('success', 'Mood journal deleted successfully!');
     }
 
+    
     /**
-     * Show a single mood journal entry.
+     * Show a single mood journal entry with its AI-generated response.
      */
     public function show(MoodJournal $moodJournal)
     {
+        // 1. Ensure the logged-in user owns this journal
         $this->authorizeAccess($moodJournal);
 
+        // 2. Eager-load the Claude response (encouragement + verse)
+        $moodJournal->load('response');
+
+        // 3. Pass both the journal and its response to the view
         return view('mood_journals.show', compact('moodJournal'));
     }
 
